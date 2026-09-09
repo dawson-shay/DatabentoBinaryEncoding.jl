@@ -97,6 +97,7 @@ include("buffered_io.jl")
 include("decode.jl")
 include("encode.jl")
 include("streaming.jl")
+include("physical_streaming.jl")
 include("export.jl")
 include("import.jl")
 
@@ -111,6 +112,10 @@ export CMBP1Msg, CBBO1sMsg, CBBO1mMsg, TCBBOMsg, BBO1sMsg, BBO1mMsg
 export ErrorMsg, SymbolMappingMsg, SystemMsg, InstrumentDefMsg
 export DBNStream, DBNStreamWriter, write_record!, close_writer!
 export foreach_record, foreach_record_with_control, foreach_trade, foreach_mbo, foreach_mbp1, foreach_mbp10, foreach_tbbo  # Market depth streaming
+export PhysicalStreamCapsV1, PhysicalStreamCountersV1, PhysicalRecordHeaderV1
+export PhysicalRecordEventV1, PhysicalStreamSummaryV1, PhysicalStreamLimitError
+export PhysicalStreamDecisionV1, PHYSICAL_CONTINUE, PHYSICAL_RETAIN_LOOKAHEAD, PHYSICAL_STOP
+export foreach_physical_cmbp1
 export record_type_for_dbn_schema  # Schema -> concrete record type
 export foreach_ohlcv, foreach_ohlcv_1s, foreach_ohlcv_1m, foreach_ohlcv_1h, foreach_ohlcv_1d  # OHLCV streaming
 export foreach_cmbp1, foreach_cbbo1s, foreach_cbbo1m, foreach_tcbbo, foreach_bbo1s, foreach_bbo1m  # Consolidated/BBO streaming
