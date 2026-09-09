@@ -107,5 +107,11 @@ using JSON3
         @test occursin("bid_pb=4660", shown)
         @test occursin("ask_pb=22136", shown)
         @test !occursin("bid_ct", shown)
+
+        frame = DBN.records_to_dataframe([rec])
+        @test frame.bid_pb == UInt16[0x1234]
+        @test frame.ask_pb == UInt16[0x5678]
+        @test !hasproperty(frame, :bid_ct)
+        @test !hasproperty(frame, :ask_ct)
     end
 end

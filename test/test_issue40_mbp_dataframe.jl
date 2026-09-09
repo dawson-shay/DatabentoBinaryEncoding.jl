@@ -41,7 +41,9 @@
     @testset "consolidated/BBO family route to the bid/ask converter" begin
         # Each shares the MBP-1 layout; previously these fell through to
         # mixed_records_to_dataframe and produced no bid_price column.
-        for (T, rt) in ((DBN.CBBO1sMsg, DBN.RType.CBBO_1S_MSG),
+        for (T, rt) in ((DBN.TCBBOMsg, DBN.RType.TCBBO_MSG),
+                        (DBN.CMBP1Msg, DBN.RType.CMBP_1_MSG),
+                        (DBN.CBBO1sMsg, DBN.RType.CBBO_1S_MSG),
                         (DBN.CBBO1mMsg, DBN.RType.CBBO_1M_MSG),
                         (DBN.BBO1sMsg, DBN.RType.BBO_1S_MSG),
                         (DBN.BBO1mMsg, DBN.RType.BBO_1M_MSG))
@@ -53,35 +55,5 @@
             @test df.bid_price == [price_to_float(Int64(1000))]
             @test df.ask_price == [price_to_float(Int64(2000))]
         end
-    end
-
-    @testset "CMBP-1 exposes publisher IDs, not order counts" begin
-        levels = DBN.ConsolidatedBidAskPair(
-            Int64(1000), Int64(2000), UInt32(10), UInt32(20), UInt16(7), UInt16(9),
-        )
-        recs = [DBN.CMBP1Msg(
-            hd(DBN.RType.CMBP_1_MSG, 42), Int64(1000), UInt32(5),
-            DBN.Action.NONE, DBN.Side.NONE, 0x00,
-            UInt64(ts), Int32(0), levels,
-        )]
-        df = records_to_dataframe(recs)
-        @test df.bid_pb == UInt16[7]
-        @test df.ask_pb == UInt16[9]
-        @test !hasproperty(df, :bid_ct)
-        @test !hasproperty(df, :ask_ct)
-    end
-
-    @testset "TCBBO shares CMBP consolidated level semantics" begin
-        levels = DBN.ConsolidatedBidAskPair(
-            Int64(1000), Int64(2000), UInt32(10), UInt32(20), UInt16(7), UInt16(9),
-        )
-        recs = [DBN.TCBBOMsg(
-            hd(DBN.RType.TCBBO_MSG, 42), Int64(1000), UInt32(5),
-            DBN.Action.TRADE, DBN.Side.BID, 0x00,
-            UInt64(ts), Int32(0), levels,
-        )]
-        df = records_to_dataframe(recs)
-        @test df.bid_pb == UInt16[7]
-        @test df.ask_pb == UInt16[9]
     end
 end
