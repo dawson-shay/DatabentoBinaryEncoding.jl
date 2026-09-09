@@ -62,6 +62,11 @@ end
 _pp_bbo(io::IO, lv::BidAskPair) = print(io,
     "bid=", _pp_px(lv.bid_px), " bsz=", _pp_sz(lv.bid_sz),
     " ask=", _pp_px(lv.ask_px), " asz=", _pp_sz(lv.ask_sz))
+_pp_bbo(io::IO, lv::ConsolidatedBidAskPair) = print(io,
+    "bid=", _pp_px(lv.bid_px), " bsz=", _pp_sz(lv.bid_sz),
+    " bid_pb=", lv.bid_pb,
+    " ask=", _pp_px(lv.ask_px), " asz=", _pp_sz(lv.ask_sz),
+    " ask_pb=", lv.ask_pb)
 
 # --- trades / orders ---
 
@@ -82,8 +87,9 @@ end
 # --- book / BBO families ---
 
 # Incremental top-of-book update: the top-level px/sz/act/sd describe THIS change,
-# then the resulting BBO from `levels`. Shared by MBP1 and CMBP1 (identical layout).
-function _pp_book_incr(io::IO, label, r, lv::BidAskPair)
+# then the resulting BBO from `levels`. Shared formatting; their level wire
+# layouts differ between order counts and consolidated publisher IDs.
+function _pp_book_incr(io::IO, label, r, lv::Union{BidAskPair,ConsolidatedBidAskPair})
     print(io, label, " ", _pp_ts(r.hd.ts_event), " iid=", r.hd.instrument_id,
         " act=", _pp_enum(r.action), " side=", _pp_enum(r.side),
         " px=", _pp_px(r.price), " sz=", _pp_sz(r.size), " | ")

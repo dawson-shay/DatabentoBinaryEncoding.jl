@@ -166,9 +166,8 @@ function records_to_dataframe(records::Vector)
         elseif record_type <: MBOMsg
             return mbo_to_dataframe(convert(Vector{MBOMsg}, records))
         elseif record_type <: TopOfBookMsg
-            # MBP-1 and the consolidated/BBO family (CMBP-1, TBBO, CBBO, BBO) all
-            # share the MBP-1 record layout: scalar fields plus a single
-            # top-of-book `levels::BidAskPair`. One converter handles them all.
+            return mbp1_to_dataframe(convert(Vector{record_type}, records))
+        elseif record_type <: ConsolidatedTopOfBookMsg
             return mbp1_to_dataframe(convert(Vector{record_type}, records))
         elseif record_type <: MBP10Msg
             return mbp10_to_dataframe(convert(Vector{MBP10Msg}, records))
@@ -276,11 +275,11 @@ function mbo_to_dataframe(records::Vector{MBOMsg})
     )
 end
 
-# MBP-1 and the consolidated/BBO family share an identical record layout: the
-# scalar trade fields plus a single top-of-book `levels::BidAskPair`. They differ
-# only in which fields the gateway populates, so one DataFrame converter serves
-# all of them.
-const TopOfBookMsg = Union{MBP1Msg,CMBP1Msg,TCBBOMsg,CBBO1sMsg,CBBO1mMsg,BBO1sMsg,BBO1mMsg}
+# MBP-1 and the non-CMBP BBO family currently expose `levels::BidAskPair`.
+# CMBP-1 is handled separately because its wire layout carries publisher IDs
+# rather than order counts.
+const TopOfBookMsg = Union{MBP1Msg,CBBO1sMsg,CBBO1mMsg,BBO1sMsg,BBO1mMsg}
+const ConsolidatedTopOfBookMsg = Union{CMBP1Msg,TCBBOMsg}
 
 function mbp1_to_dataframe(records::Vector{<:TopOfBookMsg})
     DataFrame(
@@ -297,6 +296,25 @@ function mbp1_to_dataframe(records::Vector{<:TopOfBookMsg})
         flags = [r.flags for r in records],
         ts_in_delta = [r.ts_in_delta for r in records],
         sequence = [r.sequence for r in records],
+        action = [string(r.action) for r in records],
+        side = [string(r.side) for r in records]
+    )
+end
+
+function mbp1_to_dataframe(records::Vector{<:ConsolidatedTopOfBookMsg})
+    DataFrame(
+        ts_event = [r.hd.ts_event for r in records],
+        ts_recv = [r.ts_recv for r in records],
+        instrument_id = [r.hd.instrument_id for r in records],
+        publisher_id = [r.hd.publisher_id for r in records],
+        bid_price = [price_to_float(r.levels.bid_px) for r in records],
+        ask_price = [price_to_float(r.levels.ask_px) for r in records],
+        bid_size = [r.levels.bid_sz for r in records],
+        ask_size = [r.levels.ask_sz for r in records],
+        bid_pb = [r.levels.bid_pb for r in records],
+        ask_pb = [r.levels.ask_pb for r in records],
+        flags = [r.flags for r in records],
+        ts_in_delta = [r.ts_in_delta for r in records],
         action = [string(r.action) for r in records],
         side = [string(r.side) for r in records]
     )
@@ -542,4 +560,30 @@ Remove null bytes from a string.
 """
 function strip_nulls(s::String)
     return replace(s, '\0' => "")
+end
+
+function _consolidated_level_to_dict(level::ConsolidatedBidAskPair)
+    return Dict{String,Any}(
+        "bid_px" => level.bid_px,
+        "ask_px" => level.ask_px,
+        "bid_sz" => level.bid_sz,
+        "ask_sz" => level.ask_sz,
+        "bid_pb" => level.bid_pb,
+        "ask_pb" => level.ask_pb,
+    )
+end
+
+function record_to_dict(record::Union{CMBP1Msg,TCBBOMsg})
+    return Dict{String,Any}(
+        "record_type" => string(typeof(record)),
+        "hd" => record_header_to_dict(record.hd),
+        "price" => record.price,
+        "size" => record.size,
+        "action" => record.action,
+        "side" => record.side,
+        "flags" => record.flags,
+        "ts_recv" => string(record.ts_recv),
+        "ts_in_delta" => record.ts_in_delta,
+        "levels" => [_consolidated_level_to_dict(record.levels)],
+    )
 end

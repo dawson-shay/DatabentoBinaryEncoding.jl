@@ -25,6 +25,7 @@ include("test_utils.jl")
     include("test_show.jl")  # compact one-line Base.show for record types
     include("test_symbols.jl")  # symbol_map / symbol_for / add_symbol_column! / records_to_dataframe(records, metadata)
     include("test_issue40_mbp_dataframe.jl")  # regression: MBP-1/MBP-10/BBO records_to_dataframe via nested levels (issue #40)
+    include("test_cmbp1_consolidated_layout.jl")  # authoritative Rust/Python CMBP-1 level layout
 
     # Run compatibility tests if the Rust CLI is available
     dbn_cli_path = if Sys.iswindows()

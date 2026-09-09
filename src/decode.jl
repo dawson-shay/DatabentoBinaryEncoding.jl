@@ -771,20 +771,28 @@ end
     action = safe_action(read(decoder.io, UInt8))
     side = safe_side(read(decoder.io, UInt8))
     flags = read(decoder.io, UInt8)
-    depth = read(decoder.io, UInt8)
-    ts_recv = read(decoder.io, Int64)
+    reserved1 = read(decoder.io, UInt8)
+    ts_recv = read(decoder.io, UInt64)
     ts_in_delta = read(decoder.io, Int32)
-    sequence = read(decoder.io, UInt32)
+    reserved2 = ntuple(_ -> read(decoder.io, UInt8), 4)
     
     bid_px = read(decoder.io, Int64)
     ask_px = read(decoder.io, Int64)
     bid_sz = read(decoder.io, UInt32)
     ask_sz = read(decoder.io, UInt32)
-    bid_ct = read(decoder.io, UInt32)
-    ask_ct = read(decoder.io, UInt32)
-    levels = BidAskPair(bid_px, ask_px, bid_sz, ask_sz, bid_ct, ask_ct)
+    bid_pb = read(decoder.io, UInt16)
+    level_reserved1 = (read(decoder.io, UInt8), read(decoder.io, UInt8))
+    ask_pb = read(decoder.io, UInt16)
+    level_reserved2 = (read(decoder.io, UInt8), read(decoder.io, UInt8))
+    levels = ConsolidatedBidAskPair(
+        bid_px, ask_px, bid_sz, ask_sz, bid_pb, level_reserved1, ask_pb,
+        level_reserved2,
+    )
     
-    return CMBP1Msg(hd, price, size, action, side, flags, depth, ts_recv, ts_in_delta, sequence, levels)
+    return CMBP1Msg(
+        hd, price, size, action, side, flags, reserved1, ts_recv, ts_in_delta,
+        reserved2, levels,
+    )
 end
 
 @inline function read_cbbo1s_msg(decoder::DBNDecoder, hd::RecordHeader)
@@ -837,20 +845,28 @@ end
     action = safe_action(read(decoder.io, UInt8))
     side = safe_side(read(decoder.io, UInt8))
     flags = read(decoder.io, UInt8)
-    depth = read(decoder.io, UInt8)
-    ts_recv = read(decoder.io, Int64)
+    reserved1 = read(decoder.io, UInt8)
+    ts_recv = read(decoder.io, UInt64)
     ts_in_delta = read(decoder.io, Int32)
-    sequence = read(decoder.io, UInt32)
+    reserved2 = ntuple(_ -> read(decoder.io, UInt8), 4)
     
     bid_px = read(decoder.io, Int64)
     ask_px = read(decoder.io, Int64)
     bid_sz = read(decoder.io, UInt32)
     ask_sz = read(decoder.io, UInt32)
-    bid_ct = read(decoder.io, UInt32)
-    ask_ct = read(decoder.io, UInt32)
-    levels = BidAskPair(bid_px, ask_px, bid_sz, ask_sz, bid_ct, ask_ct)
+    bid_pb = read(decoder.io, UInt16)
+    level_reserved1 = (read(decoder.io, UInt8), read(decoder.io, UInt8))
+    ask_pb = read(decoder.io, UInt16)
+    level_reserved2 = (read(decoder.io, UInt8), read(decoder.io, UInt8))
+    levels = ConsolidatedBidAskPair(
+        bid_px, ask_px, bid_sz, ask_sz, bid_pb, level_reserved1, ask_pb,
+        level_reserved2,
+    )
     
-    return TCBBOMsg(hd, price, size, action, side, flags, depth, ts_recv, ts_in_delta, sequence, levels)
+    return TCBBOMsg(
+        hd, price, size, action, side, flags, reserved1, ts_recv, ts_in_delta,
+        reserved2, levels,
+    )
 end
 
 @inline function read_bbo1s_msg(decoder::DBNDecoder, hd::RecordHeader)

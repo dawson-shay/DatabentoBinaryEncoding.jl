@@ -124,7 +124,7 @@ export Schema, Compression, Encoding, SType, RType, Action, Side, InstrumentClas
 export price_to_float, float_to_price, ts_to_datetime, datetime_to_ts, ts_to_date_time, date_time_to_ts, to_nanoseconds
 export record_length_bytes
 export DBN_VERSION, FIXED_PRICE_SCALE, UNDEF_PRICE, UNDEF_ORDER_SIZE, UNDEF_TIMESTAMP
-export BidAskPair, VersionUpgradePolicy, DatasetCondition
+export BidAskPair, ConsolidatedBidAskPair, VersionUpgradePolicy, DatasetCondition
 export write_header, read_header!, write_record, read_record, finalize_encoder
 export dbn_to_csv, dbn_to_json, dbn_to_parquet, records_to_dataframe
 export symbol_map, symbol_for, add_symbol_column!

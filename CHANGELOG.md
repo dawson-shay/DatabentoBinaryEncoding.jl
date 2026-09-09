@@ -5,6 +5,23 @@ All notable changes to DatabentoBinaryEncoding.jl are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Correct CMBP-1 and TCBBO decoding and encoding to use Databento's
+  `ConsolidatedBidAskPair` wire layout, including publisher IDs and reserved
+  bytes.
+
+### Changed
+
+- **Breaking:** `CMBP1Msg` and `TCBBOMsg` no longer expose the reserved wire
+  bytes as `depth` and `sequence`; `ts_recv` is now `UInt64`; and `levels` is a
+  `ConsolidatedBidAskPair` with `bid_pb`/`ask_pb` rather than a `BidAskPair`
+  with `bid_ct`/`ask_ct`. DataFrame conversion likewise emits publisher-ID
+  columns for these schemas. Existing derived data that consumed the old
+  fields should be regenerated from its DBN source.
+
 ## [0.1.6] - 2026-06-24
 
 ### Changed

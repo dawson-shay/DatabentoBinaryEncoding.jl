@@ -414,6 +414,37 @@ struct BidAskPair
     ask_ct::UInt32
 end
 
+"""
+    ConsolidatedBidAskPair
+
+Best bid and ask information consolidated across publishers.
+
+Unlike [`BidAskPair`](@ref), the final eight wire bytes contain publisher IDs
+and reserved bytes, not order counts. This matches Databento's
+`ConsolidatedBidAskPair` Rust and Python definitions.
+"""
+struct ConsolidatedBidAskPair
+    bid_px::Int64
+    ask_px::Int64
+    bid_sz::UInt32
+    ask_sz::UInt32
+    bid_pb::UInt16
+    _reserved1::NTuple{2,UInt8}
+    ask_pb::UInt16
+    _reserved2::NTuple{2,UInt8}
+end
+
+ConsolidatedBidAskPair(
+    bid_px::Int64,
+    ask_px::Int64,
+    bid_sz::UInt32,
+    ask_sz::UInt32,
+    bid_pb::UInt16,
+    ask_pb::UInt16,
+) = ConsolidatedBidAskPair(
+    bid_px, ask_px, bid_sz, ask_sz, bid_pb, (0x00, 0x00), ask_pb, (0x00, 0x00),
+)
+
 # Timestamp utilities
 
 """

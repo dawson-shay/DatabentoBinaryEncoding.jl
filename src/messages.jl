@@ -495,11 +495,11 @@ Consolidated market-by-price message with book depth 1.
 - `action::Action.T`: Price level action
 - `side::Side.T`: Price level side
 - `flags::UInt8`: Message flags
-- `depth::UInt8`: Book depth (always 1)
-- `ts_recv::Int64`: Timestamp when message was received
+- `_reserved1::UInt8`: Reserved wire byte
+- `ts_recv::UInt64`: Timestamp when message was received
 - `ts_in_delta::Int32`: Delta from ts_event to gateway ingestion
-- `sequence::UInt32`: Message sequence number
-- `levels::BidAskPair`: Consolidated best bid and ask information
+- `_reserved2::NTuple{4,UInt8}`: Reserved wire bytes
+- `levels::ConsolidatedBidAskPair`: Consolidated best bid and ask information
 """
 struct CMBP1Msg
     hd::RecordHeader
@@ -508,12 +508,18 @@ struct CMBP1Msg
     action::Action.T
     side::Side.T
     flags::UInt8
-    depth::UInt8
-    ts_recv::Int64
+    _reserved1::UInt8
+    ts_recv::UInt64
     ts_in_delta::Int32
-    sequence::UInt32
-    levels::BidAskPair
+    _reserved2::NTuple{4,UInt8}
+    levels::ConsolidatedBidAskPair
 end
+
+CMBP1Msg(hd, price, size, action, side, flags, ts_recv, ts_in_delta, levels) =
+    CMBP1Msg(
+        hd, price, size, action, side, flags, 0x00, ts_recv, ts_in_delta,
+        (0x00, 0x00, 0x00, 0x00), levels,
+    )
 
 """
     CBBO1sMsg
@@ -591,11 +597,11 @@ Trade-consolidated best bid/offer message.
 - `action::Action.T`: Price level action
 - `side::Side.T`: Price level side
 - `flags::UInt8`: Message flags
-- `depth::UInt8`: Book depth
-- `ts_recv::Int64`: Timestamp when message was received
+- `_reserved1::UInt8`: Reserved wire byte
+- `ts_recv::UInt64`: Timestamp when message was received
 - `ts_in_delta::Int32`: Delta from ts_event to gateway ingestion
-- `sequence::UInt32`: Message sequence number
-- `levels::BidAskPair`: Trade-consolidated BBO information
+- `_reserved2::NTuple{4,UInt8}`: Reserved wire bytes
+- `levels::ConsolidatedBidAskPair`: Trade-consolidated BBO information
 """
 struct TCBBOMsg
     hd::RecordHeader
@@ -604,12 +610,18 @@ struct TCBBOMsg
     action::Action.T
     side::Side.T
     flags::UInt8
-    depth::UInt8
-    ts_recv::Int64
+    _reserved1::UInt8
+    ts_recv::UInt64
     ts_in_delta::Int32
-    sequence::UInt32
-    levels::BidAskPair
+    _reserved2::NTuple{4,UInt8}
+    levels::ConsolidatedBidAskPair
 end
+
+TCBBOMsg(hd, price, size, action, side, flags, ts_recv, ts_in_delta, levels) =
+    TCBBOMsg(
+        hd, price, size, action, side, flags, 0x00, ts_recv, ts_in_delta,
+        (0x00, 0x00, 0x00, 0x00), levels,
+    )
 
 """
     BBO1sMsg
@@ -690,10 +702,10 @@ StructTypes.StructType(::Type{OHLCVMsg}) = StructTypes.Struct()
 StructTypes.StructType(::Type{StatusMsg}) = StructTypes.Struct()
 StructTypes.StructType(::Type{ImbalanceMsg}) = StructTypes.Struct()
 StructTypes.StructType(::Type{StatMsg}) = StructTypes.Struct()
-StructTypes.StructType(::Type{CMBP1Msg}) = StructTypes.Struct()
+StructTypes.StructType(::Type{CMBP1Msg}) = StructTypes.CustomStruct()
 StructTypes.StructType(::Type{CBBO1sMsg}) = StructTypes.Struct()
 StructTypes.StructType(::Type{CBBO1mMsg}) = StructTypes.Struct()
-StructTypes.StructType(::Type{TCBBOMsg}) = StructTypes.Struct()
+StructTypes.StructType(::Type{TCBBOMsg}) = StructTypes.CustomStruct()
 StructTypes.StructType(::Type{BBO1sMsg}) = StructTypes.Struct()
 StructTypes.StructType(::Type{BBO1mMsg}) = StructTypes.Struct()
 StructTypes.StructType(::Type{ErrorMsg}) = StructTypes.Struct()
@@ -712,3 +724,25 @@ const DBNRecord = Union{
     InstrumentDefMsg, CMBP1Msg, CBBO1sMsg, CBBO1mMsg, TCBBOMsg, BBO1sMsg, BBO1mMsg
 }
 StructTypes.StructType(::Type{BidAskPair}) = StructTypes.Struct()
+StructTypes.StructType(::Type{ConsolidatedBidAskPair}) = StructTypes.CustomStruct()
+
+StructTypes.lower(level::ConsolidatedBidAskPair) = (
+    bid_px = level.bid_px,
+    ask_px = level.ask_px,
+    bid_sz = level.bid_sz,
+    ask_sz = level.ask_sz,
+    bid_pb = level.bid_pb,
+    ask_pb = level.ask_pb,
+)
+
+StructTypes.lower(record::Union{CMBP1Msg,TCBBOMsg}) = (
+    hd = record.hd,
+    price = record.price,
+    size = record.size,
+    action = record.action,
+    side = record.side,
+    flags = record.flags,
+    ts_recv = string(record.ts_recv),
+    ts_in_delta = record.ts_in_delta,
+    levels = (StructTypes.lower(record.levels),),
+)

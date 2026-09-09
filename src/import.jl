@@ -182,7 +182,7 @@ function parse_json_record(json_dict::Dict)
             Int32(json_dict["ts_in_delta"]),
             UInt32(json_dict["sequence"])
         )
-    elseif rtype == RType.MBP_1_MSG || rtype == RType.CMBP_1_MSG
+    elseif rtype == RType.MBP_1_MSG
         # Parse levels array for MBP-1 messages
         levels_dict = json_dict["levels"][1]  # First level
         levels = BidAskPair(
@@ -206,6 +206,29 @@ function parse_json_record(json_dict::Dict)
             Int32(json_dict["ts_in_delta"]),
             UInt32(get(json_dict, "sequence", 0)),
             levels
+        )
+    elseif rtype == RType.CMBP_1_MSG || rtype == RType.TCBBO_MSG
+        levels_dict = json_dict["levels"][1]
+        levels = ConsolidatedBidAskPair(
+            parse_price(levels_dict["bid_px"]),
+            parse_price(levels_dict["ask_px"]),
+            UInt32(levels_dict["bid_sz"]),
+            UInt32(levels_dict["ask_sz"]),
+            UInt16(levels_dict["bid_pb"]),
+            UInt16(levels_dict["ask_pb"]),
+        )
+
+        T = rtype == RType.CMBP_1_MSG ? CMBP1Msg : TCBBOMsg
+        return T(
+            hd,
+            parse_price(json_dict["price"]),
+            UInt32(json_dict["size"]),
+            action_from_value(json_dict["action"]),
+            side_from_value(json_dict["side"]),
+            UInt8(json_dict["flags"]),
+            parse_uint64(json_dict["ts_recv"]),
+            Int32(json_dict["ts_in_delta"]),
+            levels,
         )
     elseif rtype == RType.MBP_10_MSG
         # Parse all 10 levels if available
@@ -504,8 +527,10 @@ end
 function get_record_size_for_rtype(rtype::RType.T)
     if rtype == RType.MBP_0_MSG
         return sizeof(TradeMsg)
-    elseif rtype == RType.MBP_1_MSG || rtype == RType.CMBP_1_MSG
+    elseif rtype == RType.MBP_1_MSG
         return sizeof(MBP1Msg)
+    elseif rtype == RType.CMBP_1_MSG || rtype == RType.TCBBO_MSG
+        return 80
     elseif rtype == RType.MBP_10_MSG
         return sizeof(MBP10Msg)
     elseif rtype == RType.MBO_MSG

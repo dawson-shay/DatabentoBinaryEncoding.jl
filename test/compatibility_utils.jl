@@ -469,30 +469,28 @@ function parse_rust_json_record(rust_json_str)
             UInt32(get(json_dict, "sequence", 0)),  # Default sequence to 0 if missing
             levels
         )
-    elseif rtype == DBN.RType.CMBP_1_MSG
-        # Parse levels array for CMBP-1 messages (consolidated market-by-price)
+    elseif rtype == DBN.RType.CMBP_1_MSG || rtype == DBN.RType.TCBBO_MSG
+        # CMBP-1 and TCBBO share the authoritative consolidated wire layout.
         levels_dict = json_dict["levels"][1]  # First level
-        levels = DBN.BidAskPair(
+        levels = DBN.ConsolidatedBidAskPair(
             parse(Int64, levels_dict["bid_px"]),
             parse(Int64, levels_dict["ask_px"]),
             UInt32(levels_dict["bid_sz"]),
             UInt32(levels_dict["ask_sz"]),
-            # CMBP uses bid_pb/ask_pb (publisher count) instead of bid_ct/ask_ct
-            UInt32(get(levels_dict, "bid_pb", 0)),
-            UInt32(get(levels_dict, "ask_pb", 0))
+            UInt16(get(levels_dict, "bid_pb", 0)),
+            UInt16(get(levels_dict, "ask_pb", 0))
         )
 
-        return DBN.CMBP1Msg(
+        T = rtype == DBN.RType.CMBP_1_MSG ? DBN.CMBP1Msg : DBN.TCBBOMsg
+        return T(
             hd,
             parse(Int64, json_dict["price"]),
             UInt32(json_dict["size"]),
             action_from_string(json_dict["action"]),
             side_from_string(json_dict["side"]),
             UInt8(json_dict["flags"]),
-            UInt8(get(json_dict, "depth", 0)),  # Default depth to 0 if missing
-            parse(Int64, json_dict["ts_recv"]),
+            parse(UInt64, json_dict["ts_recv"]),
             Int32(json_dict["ts_in_delta"]),
-            UInt32(get(json_dict, "sequence", 0)),  # Default sequence to 0 if missing (CMBP may not have sequence)
             levels
         )
     elseif rtype == DBN.RType.MBP_10_MSG
