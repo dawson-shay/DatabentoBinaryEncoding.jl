@@ -88,6 +88,7 @@ using CSV
 using Parquet2
 using JSON3
 using StructTypes
+using SHA
 
 
 # Include all the component files
@@ -113,7 +114,9 @@ export ErrorMsg, SymbolMappingMsg, SystemMsg, InstrumentDefMsg
 export DBNStream, DBNStreamWriter, write_record!, close_writer!
 export foreach_record, foreach_record_with_control, foreach_trade, foreach_mbo, foreach_mbp1, foreach_mbp10, foreach_tbbo  # Market depth streaming
 export PhysicalStreamCapsV1, PhysicalStreamCountersV1, PhysicalRecordHeaderV1
-export PhysicalRecordEventV1, PhysicalStreamSummaryV1, PhysicalStreamLimitError
+export PhysicalMetadataBindingV1, PhysicalMetadataIdentityV1, physical_mappings_sha256
+export PhysicalRecordEventV1, PhysicalStreamSummaryV1, PhysicalStreamTerminalErrorV1
+export PhysicalStreamLimitError
 export PhysicalStreamDecisionV1, PHYSICAL_CONTINUE, PHYSICAL_RETAIN_LOOKAHEAD, PHYSICAL_STOP
 export foreach_physical_cmbp1
 export record_type_for_dbn_schema  # Schema -> concrete record type
