@@ -460,5 +460,101 @@ end
             @test terminal.reason == :unexpected_stream_failure
             @test terminal.cleanup_error !== nothing
         end
+
+        @testset "metadata gate precedes record callbacks" begin
+            for path in paths
+                metadata_calls = Ref(00)
+                record_calls = Ref(0)
+                summary = foreach_record_with_control(
+                    metadata -> begin
+                        metadata_calls[] += 1
+                        @test metadata.dataset == "XNAS.ITCH"
+                        DBN_STREAM_CONTINUE
+                    end,
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    path,
+                    TradeMsg,
+                    bounded_limits(path, logical),
+                )
+                @test metadata_calls[] == 1
+                @test record_calls[] == 4
+                @test summary.terminal_reason == :eof
+
+                metadata_calls[] = 0
+                record_calls[] = 0
+                stopped = foreach_record_with_control(
+                    _ -> (metadata_calls[] += 1; DBN_STREAM_STOP),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    path,
+                    TradeMsg,
+                    bounded_limits(path, logical),
+                )
+                @test metadata_calls[] == 1
+                @test record_calls[] == 0
+                @test stopped.terminal_reason == :metadata_callback_stop
+                @test !stopped.eof_reached
+                @test stopped.source_closed
+                @test stopped.records_seen == 0
+                @test stopped.logical_bytes_consumed == metadata_end
+
+                record_calls[] = 0
+                terminal = bounded_terminal_error() do
+                    foreach_record_with_control(
+                        _ -> error("metadata rejected"),
+                        (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                        (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                        (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                        path,
+                        TradeMsg,
+                        bounded_limits(path, logical),
+                    )
+                end
+                @test terminal.reason == :metadata_callback_failure
+                @test terminal.summary.records_seen == 0
+                @test record_calls[] == 0
+                @test terminal.summary.source_closed
+
+                terminal = bounded_terminal_error() do
+                    foreach_record_with_control(
+                        _ -> nothing,
+                        (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                        (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                        (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                        path,
+                        TradeMsg,
+                        bounded_limits(path, logical),
+                    )
+                end
+                @test terminal.reason == :invalid_metadata_callback_decision
+                @test terminal.summary.records_seen == 0
+                @test record_calls[] == 0
+                @test terminal.summary.source_closed
+                @test !terminal.summary.eof_reached
+                @test terminal.summary.logical_bytes_consumed == metadata_end
+            end
+
+            record_calls = Ref(0)
+            terminal = bounded_terminal_error() do
+                BOUNDED_DBE._foreach_record_with_control_bounded(
+                    _ -> error("metadata rejected with cleanup failure"),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (record_calls[] += 1; DBN_STREAM_CONTINUE),
+                    paths[1],
+                    TradeMsg,
+                    bounded_limits(paths[1], logical);
+                    source_opener=(name, mode) -> BoundedCloseThrowIO(open(name, mode)),
+                )
+            end
+            @test terminal.reason == :metadata_callback_failure
+            @test terminal.summary.records_seen == 0
+            @test record_calls[] == 0
+            @test terminal.cleanup_error !== nothing
+            @test terminal.summary.source_closed
+        end
     end
 end

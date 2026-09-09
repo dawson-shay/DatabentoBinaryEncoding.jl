@@ -335,6 +335,21 @@ function _dbn_callback_decision(callback, argument, position)
     return decision
 end
 
+function _dbn_metadata_callback_decision(callback, metadata)
+    decision = try
+        callback(metadata)
+    catch error
+        throw(_DBNBoundedFailure(:metadata_callback_failure, error))
+    end
+    decision isa DBNStreamDecision || throw(
+        _DBNBoundedFailure(
+            :invalid_metadata_callback_decision,
+            ArgumentError("bounded metadata callback must return DBNStreamDecision"),
+        ),
+    )
+    return decision
+end
+
 function _dbn_read_metadata!(reader, state, limits)
     prefix = _dbn_stream_read(reader, 8, state.compressed)
     length(prefix) == 8 || throw(_DBNBoundedFailure(:truncated_metadata_prefix))
@@ -581,6 +596,7 @@ function _dbn_source_closed(base)
 end
 
 function _foreach_record_with_control_bounded(
+    metadata_callback,
     data_callback,
     control_callback,
     skipped_callback,
@@ -616,6 +632,10 @@ function _foreach_record_with_control_bounded(
         decoder.metadata = template.metadata
         decoder.upgrade_policy = template.upgrade_policy
         decoder.string_cache = template.string_cache
+        if _dbn_metadata_callback_decision(metadata_callback, state.metadata) ==
+           DBN_STREAM_STOP
+            state.terminal_reason = :metadata_callback_stop
+        else
         _dbn_bounded_record_loop!(
             decoder,
             source,
@@ -626,6 +646,7 @@ function _foreach_record_with_control_bounded(
             control_callback,
             skipped_callback,
         )
+        end
     catch error
         primary_error = error
         if error isa _DBNBoundedFailure
@@ -677,6 +698,47 @@ function _foreach_record_with_control_bounded(
         )
     end
     return summary
+end
+
+function _foreach_record_with_control_bounded(
+    data_callback,
+    control_callback,
+    skipped_callback,
+    filename::AbstractString,
+    ::Type{T},
+    limits::DBNStreamLimits;
+    source_opener=open,
+) where {T<:DBNRecord}
+    return _foreach_record_with_control_bounded(
+        _ -> DBN_STREAM_CONTINUE,
+        data_callback,
+        control_callback,
+        skipped_callback,
+        filename,
+        T,
+        limits;
+        source_opener=source_opener,
+    )
+end
+
+function foreach_record_with_control(
+    metadata_callback,
+    data_callback,
+    control_callback,
+    skipped_callback,
+    filename::AbstractString,
+    ::Type{T},
+    limits::DBNStreamLimits,
+) where {T<:DBNRecord}
+    return _foreach_record_with_control_bounded(
+        metadata_callback,
+        data_callback,
+        control_callback,
+        skipped_callback,
+        filename,
+        T,
+        limits,
+    )
 end
 
 function foreach_record_with_control(
