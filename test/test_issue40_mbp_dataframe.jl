@@ -41,9 +41,9 @@
     @testset "consolidated/BBO family route to the bid/ask converter" begin
         # Each shares the MBP-1 layout; previously these fell through to
         # mixed_records_to_dataframe and produced no bid_price column.
-        for (T, rt) in ((DBN.TCBBOMsg, DBN.RType.TCBBO_MSG),
-                        (DBN.CMBP1Msg, DBN.RType.CMBP_1_MSG),
-                        (DBN.CBBO1sMsg, DBN.RType.CBBO_1S_MSG),
+        # CMBP-1 and TCBBO use ConsolidatedBidAskPair and are covered by the
+        # authoritative consolidated-layout regression.
+        for (T, rt) in ((DBN.CBBO1sMsg, DBN.RType.CBBO_1S_MSG),
                         (DBN.CBBO1mMsg, DBN.RType.CBBO_1M_MSG),
                         (DBN.BBO1sMsg, DBN.RType.BBO_1S_MSG),
                         (DBN.BBO1mMsg, DBN.RType.BBO_1M_MSG))
