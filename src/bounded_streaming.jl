@@ -777,6 +777,25 @@ function foreach_record(
 end
 
 function foreach_cmbp1(
+    metadata_callback,
+    data_callback,
+    control_callback,
+    skipped_callback,
+    filename::AbstractString,
+    limits::DBNStreamLimits,
+)
+    return foreach_record_with_control(
+        metadata_callback,
+        data_callback,
+        control_callback,
+        skipped_callback,
+        filename,
+        CMBP1Msg,
+        limits,
+    )
+end
+
+function foreach_cmbp1(
     data_callback,
     control_callback,
     skipped_callback,

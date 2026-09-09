@@ -556,5 +556,40 @@ end
             @test terminal.cleanup_error !== nothing
             @test terminal.summary.source_closed
         end
+
+        @testset "CMBP convenience metadata gate" begin
+            for path in paths
+                callback_count = Ref(0)
+                stopped = foreach_cmbp1(
+                    _ -> DBN_STREAM_STOP,
+                    (_, _) -> (callback_count[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (callback_count[] += 1; DBN_STREAM_CONTINUE),
+                    (_, _) -> (callback_count[] += 1; DBN_STREAM_CONTINUE),
+                    path,
+                    bounded_limits(path, logical),
+                )
+                @test callback_count[] == 0
+                @test stopped.terminal_reason == :metadata_callback_stop
+                @test stopped.records_seen == 0
+                @test !stopped.eof_reached
+                @test stopped.source_closed
+                @test stopped.logical_bytes_consumed == metadata_end
+
+                terminal = bounded_terminal_error() do
+                    foreach_cmbp1(
+                        _ -> error("CMBP metadata rejected"),
+                        (_, _) -> (callback_count[] += 1; DBN_STREAM_CONTINUE),
+                        (_, _) -> (callback_count[] += 1; DBN_STREAM_CONTINUE),
+                        (_, _) -> (callback_count[] += 1; DBN_STREAM_CONTINUE),
+                        path,
+                        bounded_limits(path, logical),
+                    )
+                end
+                @test terminal.reason == :metadata_callback_failure
+                @test terminal.summary.records_seen == 0
+                @test terminal.summary.source_closed
+                @test callback_count[] == 0
+            end
+        end
     end
 end
