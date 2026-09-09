@@ -99,6 +99,7 @@ include("buffered_io.jl")
 include("decode.jl")
 include("encode.jl")
 include("streaming.jl")
+include("bounded_streaming.jl")
 include("replay.jl")
 include("export.jl")
 include("symbols.jl")
@@ -115,6 +116,9 @@ export CMBP1Msg, CBBO1sMsg, CBBO1mMsg, TCBBOMsg, BBO1sMsg, BBO1mMsg
 export ErrorMsg, SymbolMappingMsg, SystemMsg, InstrumentDefMsg
 export DBNStream, DBNStreamWriter, write_record!, close_writer!
 export foreach_record, foreach_record_with_control, foreach_trade, foreach_mbo, foreach_mbp1, foreach_mbp10, foreach_tbbo  # Market depth streaming
+export DBNStreamDecision, DBN_STREAM_CONTINUE, DBN_STREAM_STOP
+export DBNStreamLimits, DBNRawRecordHeader, DBNRecordPosition, DBNSkippedRecord
+export DBNStreamSummary, DBNStreamTerminalError
 export record_type_for_dbn_schema  # Schema -> concrete record type
 export foreach_ohlcv, foreach_ohlcv_1s, foreach_ohlcv_1m, foreach_ohlcv_1h, foreach_ohlcv_1d  # OHLCV streaming
 export foreach_cmbp1, foreach_cbbo1s, foreach_cbbo1m, foreach_tcbbo, foreach_bbo1s, foreach_bbo1m  # Consolidated/BBO streaming
