@@ -7,11 +7,12 @@ function physical_metadata()
         nothing, nothing, DBN.SType.INSTRUMENT_ID, false, ["SPY"], String[], String[],
         [("SPY", "SPY", Int64(100), Int64(200))])
 end
-function physical_cmbp(sequence::UInt32; action=DBN.Action.ADD, side=DBN.Side.BID)
+function physical_cmbp(sequence::UInt32; action=DBN.Action.ADD, side=DBN.Side.BID,
+                       bid_tail=UInt32(0x66551234), ask_tail=UInt32(0x88775678))
     timestamp = Int64(1_800_000_000_000_000_000 + sequence)
     header = DBN.RecordHeader(UInt8(20), DBN.RType.CMBP_1_MSG, UInt16(17), UInt32(101), timestamp)
     level = DBN.BidAskPair(Int64(500_000_000_000 + sequence), Int64(500_010_000_000 + sequence),
-        UInt32(10 + sequence), UInt32(20 + sequence), UInt32(2), UInt32(3))
+        UInt32(10 + sequence), UInt32(20 + sequence), bid_tail, ask_tail)
     DBN.CMBP1Msg(header, Int64(500_005_000_000 + sequence), UInt32(7 + sequence),
         action, side, UInt8(0xa5), UInt8(0), timestamp + 10, Int32(-7), sequence, level)
 end
@@ -42,6 +43,22 @@ function physical_caps(path; records=16, metadata=1_000_000, logical=1_000_000,
         max_transcoder_buffer_capacity_bytes=transcoder)
 end
 first_record_offset(bytes) = 9 + Int(ltoh(read(IOBuffer(bytes[5:8]), UInt32)))
+
+mutable struct CloseThrowIO <: IO
+    io::IOStream
+end
+Base.isopen(io::CloseThrowIO) = isopen(io.io)
+Base.eof(io::CloseThrowIO) = eof(io.io)
+Base.bytesavailable(io::CloseThrowIO) = bytesavailable(io.io)
+Base.position(io::CloseThrowIO) = position(io.io)
+Base.seekstart(io::CloseThrowIO) = (seekstart(io.io); io)
+Base.readbytes!(io::CloseThrowIO, bytes::AbstractVector{UInt8}, count::Integer=length(bytes)) =
+    readbytes!(io.io, bytes, count)
+Base.read(io::CloseThrowIO, ::Type{UInt8}) = read(io.io, UInt8)
+function Base.close(io::CloseThrowIO)
+    close(io.io)
+    error("injected close failure")
+end
 function stream_all(path; caps=physical_caps(path), expected=physical_binding(path))
     events = DBN.PhysicalRecordEventV1[]
     summary = DBN.foreach_physical_cmbp1(path, caps, expected) do event
@@ -81,6 +98,17 @@ end
             @test events[2].record.sequence == 11 && events[2].record.flags == 0xa5
             @test events[2].record.levels.bid_px == 500_000_000_011
             @test events[3].record.levels.ask_sz == 32
+            for event in events[2:3]
+                publisher = event.cmbp1_publisher_evidence
+                @test publisher.bid_pb == 0x1234
+                @test publisher.bid_reserved == (0x55, 0x66)
+                @test publisher.ask_pb == 0x5678
+                @test publisher.ask_reserved == (0x77, 0x88)
+                @test publisher.raw_tail_bytes ==
+                    (0x34, 0x12, 0x55, 0x66, 0x78, 0x56, 0x77, 0x88)
+                @test event.raw_record_sha256 == bytes2hex(sha256(
+                    logical[event.logical_start_offset + 1:event.logical_end_offset]))
+            end
             identity = summary.metadata; raw_metadata = raw_metadata_bytes(path)
             @test identity.header_metadata_bytes == length(raw_metadata)
             @test identity.header_metadata_sha256 == bytes2hex(sha256(raw_metadata))
@@ -126,6 +154,14 @@ end
         @test events[1].raw_record_sha256 == bytes2hex(sha256(bytes[offset:offset + 71]))
         @test summary.disposition_counts[:unknown] == 1
 
+        known_bytes = read(path); known_offset = first_record_offset(known_bytes)
+        known_bytes[known_offset + 1] = UInt8(DBN.RType.MBP_0_MSG)
+        known = joinpath(directory, "unsupported-known.dbn"); write(known, known_bytes)
+        known_events, _ = stream_all(known)
+        @test getfield.(known_events, :reason) == [:unsupported_known_rtype, :decoded]
+        @test known_events[1].raw_record_sha256 ==
+            bytes2hex(sha256(known_bytes[known_offset:known_offset + 71]))
+
         bad = write_physical(joinpath(directory, "bad.dbn"), [physical_cmbp(UInt32(2))])
         bytes = read(bad); offset = first_record_offset(bytes); bytes[offset] = UInt8(19); write(bad, bytes)
         bad_events, bad_summary = stream_all(bad); event = only(bad_events)
@@ -133,6 +169,17 @@ end
         @test event.declared_length_bytes == 76 && event.raw_record_bytes_count == 76
         @test event.raw_record_sha256 == bytes2hex(sha256(bytes[offset:offset + 75]))
         @test bad_summary.terminal_reason == :malformed_record && bad_summary.source_closed
+
+        invalid_length = write_physical(joinpath(directory, "invalid-length.dbn"),
+            [physical_cmbp(UInt32(4))])
+        bytes = read(invalid_length); offset = first_record_offset(bytes)
+        bytes[offset] = UInt8(3); write(invalid_length, bytes)
+        invalid_events, invalid_summary = stream_all(invalid_length)
+        event = only(invalid_events)
+        @test event.reason == :invalid_record_length
+        @test event.declared_length_bytes == 12 && event.raw_record_bytes_count == 16
+        @test event.raw_record_sha256 == bytes2hex(sha256(bytes[offset:offset + 15]))
+        @test invalid_summary.source_closed
 
         plain = write_physical(joinpath(directory, "complete.dbn"), [physical_cmbp(UInt32(3))])
         truncated_bytes = read(plain); resize!(truncated_bytes, length(truncated_bytes) - 5)
@@ -144,6 +191,19 @@ end
         @test event.declared_length_bytes == 80 && event.raw_record_bytes_count == 75
         @test event.raw_record_sha256 == bytes2hex(sha256(truncated_bytes[offset:end]))
         @test truncated_summary.source_closed && truncated_summary.compressed
+
+        for compressed in (false, true)
+            complete = read(plain); offset = first_record_offset(complete)
+            logical = complete[1:offset + 9]
+            header_path = joinpath(directory, compressed ? "header.dbn.zst" : "header.dbn")
+            write(header_path, compressed ? transcode(ZstdCompressor, logical) : logical)
+            header_events, header_summary = stream_all(header_path)
+            event = only(header_events)
+            @test event.reason == :truncated_header && event.raw_record_bytes_count == 10
+            @test event.declared_length_bytes == 80
+            @test event.raw_record_sha256 == bytes2hex(sha256(logical[offset:end]))
+            @test header_summary.source_closed
+        end
     end
 end
 
@@ -168,7 +228,7 @@ end
             catch error; error end
             @test caught isa DBN.PhysicalStreamTerminalErrorV1
             @test caught.kind == kind && caught.source_closed
-            @test caught.ordinal == 1 && caught.partial_bytes_count == 80
+            @test caught.ordinal == 0 && caught.partial_bytes_count == 80
             @test caught.partial_bytes_sha256 !== nothing
             @test caught.counters.logical_bytes_consumed > 0
         end
@@ -182,6 +242,7 @@ end
         zstd = write_physical(joinpath(directory, "caps.dbn.zst"), rows)
         logical_size = length(logical_fixture_bytes(plain))
         metadata_size = length(raw_metadata_bytes(plain)) - 8
+        metadata_total = metadata_size + 8
         for path in (plain, zstd)
             exact = physical_caps(path; logical=length(logical_fixture_bytes(path)),
                 metadata=length(raw_metadata_bytes(path)) - 8, records=2)
@@ -207,6 +268,24 @@ end
             @test caught.observed > caught.limit && caught.source_closed
             @test caught.counters.outer_buffer_unread_bytes <= caught.counters.outer_buffer_capacity_bytes
         end
+
+        plain_bytes = read(plain); record_offset = first_record_offset(plain_bytes)
+        for (bound, extra, expected_count) in
+            ((:logical_bytes, 16, 16), (:logical_bytes, 23, 23),
+             (:physical_source_bytes, 16, 16), (:physical_source_bytes, 23, 23))
+            caps = bound == :logical_bytes ?
+                physical_caps(plain; logical=metadata_total + extra) :
+                physical_caps(plain; physical=4 + metadata_total + extra)
+            caught = try
+                DBN.foreach_physical_cmbp1(_ -> DBN.PHYSICAL_CONTINUE,
+                    plain, caps, physical_binding(plain)); nothing
+            catch error; error end
+            @test caught.kind == :resource && caught.bound == bound
+            @test caught.ordinal == 0 && caught.partial_bytes_count == expected_count
+            @test caught.partial_bytes_sha256 == bytes2hex(sha256(
+                plain_bytes[record_offset:record_offset + expected_count - 1]))
+            @test caught.source_closed
+        end
         invalid = copy(read(plain)); invalid[1] = 0x00
         invalid_path = joinpath(directory, "invalid.dbn"); write(invalid_path, invalid)
         caught = try
@@ -216,5 +295,33 @@ end
         @test caught isa DBN.PhysicalStreamTerminalErrorV1
         @test caught.kind == :format && caught.reason == :invalid_magic && caught.source_closed
         @test caught.partial_bytes_count == 8 && caught.partial_bytes_sha256 !== nothing
+
+        missing = joinpath(directory, "missing.dbn")
+        caught = try
+            DBN.foreach_physical_cmbp1(_ -> DBN.PHYSICAL_CONTINUE, missing,
+                physical_caps(plain), physical_binding(plain)); nothing
+        catch error; error end
+        @test caught isa DBN.PhysicalStreamTerminalErrorV1
+        @test caught.kind == :source && caught.reason == :source_open_failure
+        @test caught.source_closed && caught.ordinal == 0
+
+        corrupt_zstd = joinpath(directory, "corrupt.dbn.zst")
+        write(corrupt_zstd, UInt8[0x28, 0xb5, 0x2f, 0xfd, 0xff, 0xff, 0xff, 0xff])
+        caught = try
+            DBN.foreach_physical_cmbp1(_ -> DBN.PHYSICAL_CONTINUE, corrupt_zstd,
+                physical_caps(corrupt_zstd), physical_binding(plain)); nothing
+        catch error; error end
+        @test caught isa DBN.PhysicalStreamTerminalErrorV1
+        @test caught.kind == :format && caught.reason == :decompression_failure
+        @test caught.source_closed && caught.counters.physical_source_bytes_pulled > 0
+
+        caught = try
+            DBN._foreach_physical_cmbp1(_ -> DBN.PHYSICAL_CONTINUE, plain,
+                physical_caps(plain), physical_binding(plain),
+                value -> CloseThrowIO(open(value, "r"))); nothing
+        catch error; error end
+        @test caught isa DBN.PhysicalStreamTerminalErrorV1
+        @test caught.kind == :cleanup && caught.reason == :source_close_failure
+        @test caught.source_closed && caught.counters.logical_bytes_consumed == logical_size
     end
 end

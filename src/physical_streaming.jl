@@ -140,6 +140,14 @@ struct PhysicalRecordHeaderV1
     ts_event::Union{Int64,Nothing}
 end
 
+struct PhysicalCMBP1PublisherEvidenceV1
+    bid_pb::UInt16
+    bid_reserved::NTuple{2,UInt8}
+    ask_pb::UInt16
+    ask_reserved::NTuple{2,UInt8}
+    raw_tail_bytes::NTuple{8,UInt8}
+end
+
 struct PhysicalRecordEventV1
     ordinal::UInt64
     disposition::Symbol
@@ -150,6 +158,7 @@ struct PhysicalRecordEventV1
     raw_record_sha256::String
     raw_action_byte::Union{UInt8,Nothing}
     raw_side_byte::Union{UInt8,Nothing}
+    cmbp1_publisher_evidence::Union{PhysicalCMBP1PublisherEvidenceV1,Nothing}
     record::Union{DBNRecord,Nothing}
     logical_start_offset::Int64
     logical_end_offset::Int64
@@ -283,6 +292,35 @@ function _bounded_read(reader, source, count, caps, ordinal)
     bytes
 end
 
+function _attach_partial!(error::PhysicalStreamTerminalErrorV1, partial, ordinal)
+    error.ordinal = ordinal
+    error.partial_bytes_count = length(partial)
+    error.partial_bytes_sha256 = isempty(partial) ? nothing : bytes2hex(SHA.sha256(partial))
+    error
+end
+
+function _read_record_part(reader, source, count, caps, ordinal, prefix)
+    bytes = UInt8[]
+    sizehint!(bytes, count)
+    for _ in 1:count
+        chunk = try
+            _bounded_read(reader, source, 1, caps, ordinal)
+        catch error
+            partial = vcat(prefix, bytes)
+            if error isa PhysicalStreamTerminalErrorV1
+                throw(_attach_partial!(error, partial, ordinal))
+            end
+            reason = reader.io isa TranscodingStream ? :decompression_failure : :record_read_failure
+            kind = reader.io isa TranscodingStream ? :format : :internal
+            throw(_failure(kind, reason, sprint(showerror, error); ordinal,
+                partial, counters=_counters(reader, source), cause=error))
+        end
+        isempty(chunk) && break
+        push!(bytes, only(chunk))
+    end
+    bytes
+end
+
 function _le(::Type{T}, bytes::AbstractVector{UInt8}, first::Integer) where {T}
     first + sizeof(T) - 1 <= length(bytes) || return nothing
     ltoh(read(IOBuffer(bytes[first:first + sizeof(T) - 1]), T))
@@ -302,8 +340,16 @@ function _event(ordinal, disposition, reason, header_bytes, body, record,
     count, digest = _raw_record_identity(header_bytes, body)
     declared = raw.length_units === nothing ? nothing : Int64(raw.length_units) * 4
     cmbp_layout = raw.rtype_byte == UInt8(RType.CMBP_1_MSG) && length(body) >= 14
+    publisher_evidence = if raw.rtype_byte == UInt8(RType.CMBP_1_MSG) && length(body) >= 64
+        tail = Tuple(body[57:64])
+        PhysicalCMBP1PublisherEvidenceV1(_le(UInt16, body, 57), (body[59], body[60]),
+            _le(UInt16, body, 61), (body[63], body[64]), tail)
+    else
+        nothing
+    end
     PhysicalRecordEventV1(ordinal, disposition, reason, raw, declared, count, digest,
-        cmbp_layout ? body[13] : nothing, cmbp_layout ? body[14] : nothing, record,
+        cmbp_layout ? body[13] : nothing, cmbp_layout ? body[14] : nothing,
+        publisher_evidence, record,
         logical_start, Int64(reader.total_read), _counters(reader, source))
 end
 
@@ -381,12 +427,22 @@ included. Every source is closed before return or typed terminal failure.
 """
 function foreach_physical_cmbp1(callback::F, path::AbstractString, caps::PhysicalStreamCapsV1,
                                 expected::PhysicalMetadataBindingV1) where {F}
-    base = open(path, "r"); capped = nothing; reader = nothing; failure = nothing
+    _foreach_physical_cmbp1(callback, path, caps, expected, value -> open(value, "r"))
+end
+
+function _foreach_physical_cmbp1(callback::F, path::AbstractString, caps::PhysicalStreamCapsV1,
+                                 expected::PhysicalMetadataBindingV1, source_opener::O) where {F,O}
+    base = nothing; capped = nothing; reader = nothing; failure = nothing
     metadata_identity = nothing; compressed = false; records_read = UInt64(0)
     counts = Dict{Symbol,UInt64}(:cmbp1 => 0, :control => 0, :unknown => 0, :malformed => 0)
     retained = nothing; terminal = :uninitialized; reached_eof = false
     final_counters = _ZERO_COUNTERS
     try
+        base = try
+            source_opener(path)
+        catch error
+            throw(_failure(:source, :source_open_failure, sprint(showerror, error); cause=error))
+        end
         magic = read(base, 4)
         length(magic) == 4 || throw(_failure(:format, :truncated_magic,
             "source is shorter than four bytes"; partial=magic))
@@ -438,7 +494,7 @@ function foreach_physical_cmbp1(callback::F, path::AbstractString, caps::Physica
                 "record cap exceeded"; ordinal=records_read, counters=_counters(reader, capped),
                 bound=:records, limit=caps.max_records, observed=records_read + 1))
             logical_start = Int64(reader.total_read)
-            header_bytes = _bounded_read(reader, capped, 16, caps, records_read)
+            header_bytes = _read_record_part(reader, capped, 16, caps, records_read, UInt8[])
             if length(header_bytes) < 16
                 event = _event(records_read, :malformed, :truncated_header, header_bytes,
                     UInt8[], nothing, logical_start, reader, capped)
@@ -452,7 +508,8 @@ function foreach_physical_cmbp1(callback::F, path::AbstractString, caps::Physica
                 counts[:malformed] += 1; records_read += 1
                 _callback_decision(callback, event); terminal = :malformed_record; break
             end
-            body = _bounded_read(reader, capped, declared_length - 16, caps, records_read)
+            body = _read_record_part(reader, capped, declared_length - 16, caps,
+                records_read, header_bytes)
             if length(body) != declared_length - 16
                 event = _event(records_read, :malformed, :truncated_body, header_bytes,
                     body, nothing, logical_start, reader, capped)
@@ -472,21 +529,34 @@ function foreach_physical_cmbp1(callback::F, path::AbstractString, caps::Physica
         end
         final_counters = _check_buffer_caps(reader, capped, caps, records_read)
     catch error
-        failure = error isa PhysicalStreamTerminalErrorV1 ? error : _failure(:internal,
-            :unexpected_exception, sprint(showerror, error); ordinal=records_read,
-            counters=reader === nothing ? _ZERO_COUNTERS : _counters(reader, capped), cause=error)
+        failure = if error isa PhysicalStreamTerminalErrorV1
+            error
+        elseif compressed
+            _failure(:format, :decompression_failure, sprint(showerror, error);
+                ordinal=records_read,
+                counters=reader === nothing ? _ZERO_COUNTERS : _counters(reader, capped), cause=error)
+        else
+            _failure(:internal, :unexpected_exception, sprint(showerror, error);
+                ordinal=records_read,
+                counters=reader === nothing ? _ZERO_COUNTERS : _counters(reader, capped), cause=error)
+        end
     finally
         close_error = nothing
         try
-            reader === nothing ? (capped === nothing ? close(base) : close(capped)) : close(reader)
+            if reader !== nothing
+                close(reader)
+            elseif capped !== nothing
+                close(capped)
+            elseif base !== nothing
+                close(base)
+            end
         catch error
             close_error = error
-            try close(base) catch end
+            base === nothing || try close(base) catch end
         end
-        isopen(base) && try close(base) catch error; close_error = error end
-        closed = !isopen(base)
+        base === nothing || (isopen(base) && try close(base) catch error; close_error = error end)
+        closed = base === nothing || !isopen(base)
         if failure !== nothing
-            failure.ordinal = records_read
             reader === nothing || (failure.counters = _counters(reader, capped))
             failure.source_closed = closed
         elseif close_error !== nothing || !closed

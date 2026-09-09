@@ -115,6 +115,7 @@ export DBNStream, DBNStreamWriter, write_record!, close_writer!
 export foreach_record, foreach_record_with_control, foreach_trade, foreach_mbo, foreach_mbp1, foreach_mbp10, foreach_tbbo  # Market depth streaming
 export PhysicalStreamCapsV1, PhysicalStreamCountersV1, PhysicalRecordHeaderV1
 export PhysicalMetadataBindingV1, PhysicalMetadataIdentityV1, physical_mappings_sha256
+export PhysicalCMBP1PublisherEvidenceV1
 export PhysicalRecordEventV1, PhysicalStreamSummaryV1, PhysicalStreamTerminalErrorV1
 export PhysicalStreamLimitError
 export PhysicalStreamDecisionV1, PHYSICAL_CONTINUE, PHYSICAL_RETAIN_LOOKAHEAD, PHYSICAL_STOP
