@@ -43,7 +43,7 @@ DBN data schemas representing different types of market data.
 - `STATISTICS`: Market statistics
 - `STATUS`: Exchange status messages
 - `IMBALANCE`: Order imbalance data
-- `CBBO`: Consolidated best bid/offer
+- `OHLCV_EOD`: OHLCV at the end of the trading session
 - `CBBO_1S`: Consolidated BBO at 1-second intervals
 - `CBBO_1M`: Consolidated BBO at 1-minute intervals
 - `CMBP_1`: Consolidated market-by-price depth 1
@@ -65,10 +65,10 @@ DBN data schemas representing different types of market data.
     STATISTICS = 10
     STATUS = 11
     IMBALANCE = 12
-    CBBO = 13
-    CBBO_1S = 14
-    CBBO_1M = 15
-    CMBP_1 = 16
+    OHLCV_EOD = 13
+    CMBP_1 = 14
+    CBBO_1S = 15
+    CBBO_1M = 16
     TCBBO = 17
     BBO_1S = 18
     BBO_1M = 19

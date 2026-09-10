@@ -87,6 +87,27 @@ function bounded_fixture(directory)
     return logical, (plain, compressed), metadata_end
 end
 
+function authoritative_cmbp_metadata_fixture(directory)
+    path = joinpath(directory, "authoritative-cmbp-metadata.dbn")
+    metadata = Metadata(
+        UInt8(1),
+        "OPRA.PILLAR",
+        Schema.CMBP_1,
+        Int64(1_787_616_000_000_000_000),
+        Int64(1_787_702_400_000_000_000),
+        nothing,
+        SType.PARENT,
+        SType.INSTRUMENT_ID,
+        false,
+        ["SPY.OPT"],
+        String[],
+        String[],
+        Tuple{String,String,Int64,Int64}[],
+    )
+    write_dbn(path, metadata, CMBP1Msg[])
+    return path, read(path)
+end
+
 function bounded_limits(
     path,
     logical;
@@ -174,6 +195,28 @@ function Base.close(io::BoundedCloseThrowIO)
 end
 
 @testset "Bounded record streaming" begin
+    @testset "authoritative DBN schema value 14 is CMBP-1" begin
+        mktempdir() do directory
+            path, bytes = authoritative_cmbp_metadata_fixture(directory)
+            # DBN header: magic (3), version (1), metadata length (4), dataset (16),
+            # then the little-endian UInt16 schema discriminant. Rust dbn 0.69.0
+            # identifies raw value 14 as `cmbp-1`.
+            raw_schema = ltoh(reinterpret(UInt16, bytes[25:26])[1])
+            @test raw_schema == 14
+            @test Schema.T(raw_schema) == Schema.CMBP_1
+            @test Schema.T(raw_schema) != Schema.CBBO_1S
+
+            decoder = DBNDecoder(path)
+            try
+                @test decoder.metadata.schema == Schema.CMBP_1
+                @test decoder.metadata.schema != Schema.CBBO_1S
+            finally
+                decoder.io !== decoder.base_io && close(decoder.io)
+                isopen(decoder.base_io) && close(decoder.base_io)
+            end
+        end
+    end
+
     @test_throws ArgumentError DBNStreamLimits(0, 16, 8, 4, 1)
     @test_throws ArgumentError DBNStreamLimits(1, 15, 8, 4, 1)
     @test_throws ArgumentError DBNStreamLimits(1, 16, 7, 4, 1)
