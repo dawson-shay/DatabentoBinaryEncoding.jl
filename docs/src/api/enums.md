@@ -22,7 +22,8 @@ The `Schema` enum defines the available data schemas:
 - `STATISTICS` - Publisher statistics
 - `STATUS` - Status messages
 - `IMBALANCE` - Imbalance messages
-- `CBBO`, `CBBO_1S`, `CBBO_1M` - Consolidated BBO (event, 1-second, 1-minute)
+- `OHLCV_EOD` - OHLCV bars at the end of the trading session
+- `CBBO_1S`, `CBBO_1M` - Consolidated BBO (1-second, 1-minute)
 - `CMBP_1` - Consolidated market-by-price (top of book)
 - `TCBBO` - Consolidated BBO (trade-sampled)
 - `BBO_1S`, `BBO_1M` - BBO at 1-second / 1-minute intervals
