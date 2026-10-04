@@ -28,6 +28,7 @@ include("test_utils.jl")
     include("test_cme_2026_07.jl")  # CME 2026-07 normalization: per-leg defs, standalone F_LAST, StatType/TradingEvent enums, flags
     include("test_mbo_wire_layout.jl")  # regression: MBOMsg wire layout (order_id/price/ts_recv offsets) vs Databento's own fixtures
     include("test_stat_quantity_sentinel.jl")  # regression: v3 StatMsg UNDEF quantity written as typemax(Int64), not -1
+    include("test_cmbp1_consolidated_layout.jl")  # authoritative Rust/Python CMBP-1 level layout
 
     # Run compatibility tests if the Rust CLI is available
     dbn_cli_path = if Sys.iswindows()

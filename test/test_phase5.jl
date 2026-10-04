@@ -1300,9 +1300,9 @@ using Dates
                                 @test r.action in [Action.NONE, Action.TRADE, Action.MODIFY]
                             end
                             
-                            # Check BidAskPair levels
+                            # Check top-of-book levels (consolidated records carry publisher IDs)
                             if hasproperty(r, :levels)
-                                @test typeof(r.levels) == BidAskPair
+                                @test typeof(r.levels) == (r isa CBBO1sMsg ? ConsolidatedBidAskPair : BidAskPair)
                                 @test r.levels.bid_px >= 0
                                 @test r.levels.ask_px >= 0
                                 @test r.levels.bid_sz >= 0
@@ -1358,18 +1358,14 @@ using Dates
                 try
                     # Create test CBBO-1s message
                     hd = RecordHeader(20, RType.CBBO_1S_MSG, 1, 5482, 1609113599045849637)
-                    level = BidAskPair(3702250000000, 3702750000000, 18, 13, 12, 8)
+                    level = ConsolidatedBidAskPair(3702250000000, 3702750000000, 0x00000012, 0x0000000d, 0x0001, 0x0002)
                     cbbo_msg = CBBO1sMsg(
                         hd,                      # hd
                         3702500000000,          # price ($3702.5)
-                        2,                      # size
-                        Action.NONE,            # action
+                        UInt32(2),              # size
                         Side.ASK,               # side
                         0xa8,                   # flags (168)
-                        0,                      # depth
                         1609113600000000000,    # ts_recv
-                        500000000,              # ts_in_delta
-                        145799,                 # sequence
                         level                   # levels
                     )
                     
@@ -1384,11 +1380,11 @@ using Dates
                     r = records[1]
                     @test r.price == cbbo_msg.price
                     @test r.size == cbbo_msg.size
-                    @test r.action == cbbo_msg.action
                     @test r.side == cbbo_msg.side
                     @test r.flags == cbbo_msg.flags
                     @test r.ts_recv == cbbo_msg.ts_recv
-                    @test r.sequence == cbbo_msg.sequence
+                    @test r.levels.bid_pb == cbbo_msg.levels.bid_pb
+                    @test r.levels.ask_pb == cbbo_msg.levels.ask_pb
                     @test r.levels.bid_px == cbbo_msg.levels.bid_px
                     @test r.levels.ask_px == cbbo_msg.levels.ask_px
                     
